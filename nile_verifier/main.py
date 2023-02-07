@@ -55,7 +55,7 @@ def check_is_account(main_file):
 def get_files(main_file, include_path=False):
     print(f"processing files {main_file}")
 
-    cairo_paths = getCairoPaths()
+    cairo_paths = getCairoPaths(cairo_path=[])
 
     # to do: support multifile
     contract_paths = [main_file]
@@ -110,22 +110,35 @@ def get_contract_name(path):
     return splitext(basename(path))[0]
 
 # list of cairo search paths
-def getCairoPaths():
-    # TODO search paths: according to https://github.com/starkware-libs/cairo-lang/blob/54d7e92a703b3b5a1e07e9389608178129946efc/src/starkware/cairo/lang/compiler/cairo_compile.py
-    # 1. --cairo_path
-    # 2. CAIRO_PATH
+# @param cairo_path list of cairo search paths that take precedence
+def getCairoPaths(cairo_path):
+    # search paths according to https://github.com/starkware-libs/cairo-lang/blob/54d7e92a703b3b5a1e07e9389608178129946efc/src/starkware/cairo/lang/compiler/cairo_compile.py
+    # 1. --cairo_path - colon-separated list
+    # comes from cairo_path param for this function
+
+    # 2. CAIRO_PATH - colon-separated list
+    envVar = os.getenv('CAIRO_PATH')
+    print(f"os env var {envVar}")
+    cairo_path.extend(envVar.split(":"))
+
     # 3. cwd
     # 4. standard library directory relative to the compiler path
-
-    cairo_path = [] # TODO support initial value to be passed in
     starkware_src = os.path.join(os.path.dirname(cairo_compile.__file__), "../../../..")
-    cairo_path = [
+    # cairo_path = [
+    #     os.path.abspath(path)
+    #     for path in cairo_path + [os.curdir, starkware_src]
+    #     if path is not None and os.path.isdir(path)
+    # ]
+    cairo_path.extend([os.curdir, starkware_src])
+    print(f"cairo_path {cairo_path}")
+
+    existant_cairo_paths = [
         os.path.abspath(path)
-        for path in cairo_path + [os.curdir, starkware_src]
+        for path in cairo_path
         if path is not None and os.path.isdir(path)
     ]
-    print(f"cairo_path {cairo_path}")
-    return cairo_path
+    print(f"existant_cairo_paths {existant_cairo_paths}")
+    return existant_cairo_paths
 
     # package = os.path.dirname(os.path.abspath(__file__))
     # print(f"os package dir {package}")
