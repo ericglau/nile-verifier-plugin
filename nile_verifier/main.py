@@ -1,11 +1,14 @@
+import os
 import time
 import asyncclick as click
 import logging
+import re
 from os.path import basename, splitext
 from nile.common import get_class_hash
 from nile_verifier.api import Api
 from yaspin import yaspin
 from yaspin.spinners import Spinners
+from starkware.cairo.lang.compiler import cairo_compile
 
 @click.command()
 @click.argument("main_file", nargs=1)
@@ -50,6 +53,10 @@ def check_is_account(main_file):
     return contract_name.endswith("Account")
 
 def get_files(main_file):
+    print(f"processing files {main_file}")
+
+    cairo_paths = getCairoPaths()
+
     # to do: support multifile
     contract_paths = [main_file]
 
@@ -58,8 +65,48 @@ def get_files(main_file):
         contract_filename = basename(contract_path)
         with open(contract_path) as f:
             files[contract_filename] = f.read()
+            print(f"reading file {contract_filename} in path {contract_path}") #, content {files[contract_filename]}")
 
+            regex = "^from\s(.*?)\simport"
+            regex_compiled = re.compile(regex, re.MULTILINE)
+            result = regex_compiled.findall(files[contract_filename])
+            print(f"regex result: {result}")
+
+            iterator = map(to_cairo_file_path, result)
+            imported_files = list(iterator)
+            print(f"imported files: {imported_files}")
+
+            for imported_file in imported_files:
+                recursive_files = get_files(imported_file)
+
+
+    print(f"files {files}")
     return files
+
+def to_cairo_file_path(filepath):
+    return f"{filepath.replace('.', '/')}.cairo"
 
 def get_contract_name(path):
     return splitext(basename(path))[0]
+
+# list of cairo search paths
+def getCairoPaths():
+    # TODO search paths: according to https://github.com/starkware-libs/cairo-lang/blob/54d7e92a703b3b5a1e07e9389608178129946efc/src/starkware/cairo/lang/compiler/cairo_compile.py
+    # 1. --cairo_path
+    # 2. CAIRO_PATH
+    # 3. cwd
+    # 4. standard library directory relative to the compiler path
+
+    cairo_path = [] # TODO support initial value to be passed in
+    starkware_src = os.path.join(os.path.dirname(cairo_compile.__file__), "../../../..")
+    cairo_path = [
+        os.path.abspath(path)
+        for path in cairo_path + [os.curdir, starkware_src]
+        if path is not None and os.path.isdir(path)
+    ]
+    print(f"cairo_path {cairo_path}")
+    return cairo_path
+
+    # package = os.path.dirname(os.path.abspath(__file__))
+    # print(f"os package dir {package}")
+    # return (f"{package}/artifacts", f"{package}/artifacts/abis")
