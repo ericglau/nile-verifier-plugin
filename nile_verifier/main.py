@@ -14,7 +14,8 @@ from starkware.cairo.lang.compiler import cairo_compile
 @click.argument("main_file", nargs=1)
 @click.option("--network", nargs=1, required=True)
 @click.option("--compiler_version", nargs=1, default="0.10.2")
-def verify(main_file, network, compiler_version):
+@click.option("--cairo_path", nargs=1)
+def verify(main_file, network, compiler_version, cairo_path):
     """
     Command for automatically verify the sourcecode of a contract on starkscan.co.
     """
@@ -23,6 +24,8 @@ def verify(main_file, network, compiler_version):
     class_hash = hex(get_class_hash(contract_name))
 
     if api.is_hash_verifiable(class_hash):
+        cairo_paths = getCairoPaths(cairo_path)
+
         logging.info(f"🔎  Verifying {contract_name} on {network}...")
         job_id = api.create_job({
             "main_file_path": basename(main_file),
@@ -30,7 +33,7 @@ def verify(main_file, network, compiler_version):
             "name": contract_name,
             "compiler_version": compiler_version,
             "is_account_contract": check_is_account(main_file),
-            "files": get_files(main_file),
+            "files": get_files(main_file, cairo_paths),
         })
 
         status = 'PENDING'
@@ -52,10 +55,8 @@ def check_is_account(main_file):
     contract_name = get_contract_name(main_file)
     return contract_name.endswith("Account")
 
-def get_files(main_file, include_path=False):
+def get_files(main_file, cairo_paths, include_path=False):
     print(f"processing files {main_file}")
-
-    cairo_paths = getCairoPaths(cairo_path=[])
 
     # to do: support multifile
     contract_paths = [main_file]
@@ -85,7 +86,7 @@ def get_files(main_file, include_path=False):
                     print(f"imported files: {imported_files}")
 
                     for imported_file in imported_files:
-                        recursive_files = get_files(imported_file, include_path=True)
+                        recursive_files = get_files(imported_file, cairo_paths, include_path=True)
                         files.update(recursive_files)
             else:
                 print(f"ERROR path {contract_abs_path} does not exist")
@@ -112,14 +113,17 @@ def get_contract_name(path):
 # list of cairo search paths
 # @param cairo_path list of cairo search paths that take precedence
 def getCairoPaths(cairo_path):
+    cairo_paths = []
     # search paths according to https://github.com/starkware-libs/cairo-lang/blob/54d7e92a703b3b5a1e07e9389608178129946efc/src/starkware/cairo/lang/compiler/cairo_compile.py
     # 1. --cairo_path - colon-separated list
-    # comes from cairo_path param for this function
+    print(f"cairo_path param {cairo_path}")
+    if cairo_path is not None:
+        cairo_paths.extend(cairo_path.split(":"))
 
     # 2. CAIRO_PATH - colon-separated list
     envVar = os.getenv('CAIRO_PATH')
     print(f"os env var {envVar}")
-    cairo_path.extend(envVar.split(":"))
+    cairo_paths.extend(envVar.split(":"))
 
     # 3. cwd
     # 4. standard library directory relative to the compiler path
@@ -129,12 +133,12 @@ def getCairoPaths(cairo_path):
     #     for path in cairo_path + [os.curdir, starkware_src]
     #     if path is not None and os.path.isdir(path)
     # ]
-    cairo_path.extend([os.curdir, starkware_src])
-    print(f"cairo_path {cairo_path}")
+    cairo_paths.extend([os.curdir, starkware_src])
+    print(f"cairo_paths {cairo_paths}")
 
     existant_cairo_paths = [
         os.path.abspath(path)
-        for path in cairo_path
+        for path in cairo_paths
         if path is not None and os.path.isdir(path)
     ]
     print(f"existant_cairo_paths {existant_cairo_paths}")
