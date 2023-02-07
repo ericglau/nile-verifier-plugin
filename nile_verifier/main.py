@@ -3,7 +3,7 @@ import time
 import asyncclick as click
 import logging
 import re
-from os.path import basename, splitext
+from os.path import basename, splitext, exists
 from nile.common import get_class_hash
 from nile_verifier.api import Api
 from yaspin import yaspin
@@ -52,7 +52,7 @@ def check_is_account(main_file):
     contract_name = get_contract_name(main_file)
     return contract_name.endswith("Account")
 
-def get_files(main_file):
+def get_files(main_file, include_path=False):
     print(f"processing files {main_file}")
 
     cairo_paths = getCairoPaths()
@@ -63,28 +63,48 @@ def get_files(main_file):
     files = {}
     for contract_path in contract_paths:
         contract_filename = basename(contract_path)
-        with open(contract_path) as f:
-            files[contract_filename] = f.read()
-            print(f"reading file {contract_filename} in path {contract_path}") #, content {files[contract_filename]}")
+        
+        # possible_file_locations = []
+        for cairo_path in cairo_paths:
+            contract_abs_path = f"{cairo_path}/{contract_path}"
+            if os.path.exists(contract_abs_path):
+                print(f"GOOD path {contract_abs_path} exists")
+                with open(contract_abs_path) as f:
+                    key = contract_filename if not include_path else contract_path
+                    print(f"saving as key {key}")
+                    files[key] = f.read()
+                    print(f"reading file {contract_filename} in path {contract_abs_path}") #, content {files[contract_filename]}")
 
-            regex = "^from\s(.*?)\simport"
-            regex_compiled = re.compile(regex, re.MULTILINE)
-            result = regex_compiled.findall(files[contract_filename])
-            print(f"regex result: {result}")
+                    regex = "^from\s(.*?)\simport"
+                    regex_compiled = re.compile(regex, re.MULTILINE)
+                    result = regex_compiled.findall(files[key])
+                    print(f"regex result: {result}")
 
-            iterator = map(to_cairo_file_path, result)
-            imported_files = list(iterator)
-            print(f"imported files: {imported_files}")
+                    iterator = map(to_cairo_file_path, result)
+                    imported_files = list(iterator)
+                    print(f"imported files: {imported_files}")
 
-            for imported_file in imported_files:
-                recursive_files = get_files(imported_file)
+                    for imported_file in imported_files:
+                        recursive_files = get_files(imported_file, include_path=True)
+                        files.update(recursive_files)
+            else:
+                print(f"ERROR path {contract_abs_path} does not exist")
+        # possible_file_locations = [
+        #     os.path.abspath(path)
+        #     for path in cairo_paths
+        #     if path is not None and os.path.isdir(path)
+        # ]
 
 
-    print(f"files {files}")
+    # print(f"files {files}")
+    print(f"all keys {files.keys()}")
     return files
 
 def to_cairo_file_path(filepath):
     return f"{filepath.replace('.', '/')}.cairo"
+
+def append_basedir(basedir, filepath):
+    return f"{basedir}/{filepath}"
 
 def get_contract_name(path):
     return splitext(basename(path))[0]
