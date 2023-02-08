@@ -55,15 +55,14 @@ def check_is_account(main_file):
     contract_name = get_contract_name(main_file)
     return contract_name.endswith("Account")
 
-def get_files(main_file, import_search_paths, files = {}, include_path=False):
+def get_files(main_file, import_search_paths, cache = {}, include_path=False):
     print(f"processing contract {main_file}")
 
     contract_filename = basename(main_file)
     key = contract_filename if not include_path else main_file
-    if key in files:
-        # this is already processed in a shallower level of recursion
-        print(f"already processed {files}")
-        return files
+    if key in cache:
+        # circular dependency - cairo compiler would throw an error but we'll just return
+        return cache
 
     found_contract = False
     for import_search_path in import_search_paths:
@@ -71,23 +70,20 @@ def get_files(main_file, import_search_paths, files = {}, include_path=False):
         if os.path.exists(contract_abs_path):
             found_contract = True
             with open(contract_abs_path) as f:
-                print(f"reading file {contract_filename} in path {contract_abs_path}")
                 file_content = f.read()
 
-                files[key] = file_content
+                cache[key] = file_content
 
                 regex = "^from\s(.*?)\simport"
                 regex_compiled = re.compile(regex, re.MULTILINE)
                 result = regex_compiled.findall(file_content)
-                print(f"regex result: {result}")
 
                 iterator = map(to_cairo_file_path, result)
                 imported_files = list(iterator)
-                print(f"imported files: {imported_files}")
 
                 for imported_file in imported_files:
-                    recursive_files = get_files(imported_file, import_search_paths, files, include_path=True)
-                    files.update(recursive_files)
+                    recursive_files = get_files(imported_file, import_search_paths, cache, include_path=True)
+                    cache.update(recursive_files)
             break
 
     if found_contract is False:
@@ -95,8 +91,8 @@ def get_files(main_file, import_search_paths, files = {}, include_path=False):
                 f"Could not find {main_file} in any of the following paths: {import_search_paths}"
             )
 
-    print(f"all keys {files.keys()}")
-    return files
+    print(f"all keys {cache.keys()}")
+    return cache
 
 def to_cairo_file_path(filepath):
     return f"{filepath.replace('.', '/')}.cairo"
@@ -104,9 +100,6 @@ def to_cairo_file_path(filepath):
 def get_contract_name(path):
     return splitext(basename(path))[0]
 
-# Import search path order according to
-# https://www.cairo-lang.org/docs/how_cairo_works/imports.html#import-search-paths and
-# https://github.com/starkware-libs/cairo-lang/blob/v0.10.3/src/starkware/cairo/lang/compiler/cairo_compile.py#L152
 def get_import_search_paths(cairo_path):
     """
     Get import search paths in the following order:
@@ -115,30 +108,27 @@ def get_import_search_paths(cairo_path):
     3. current directory
     4. standard library directory relative to the compiler path
 
+    Reference: https://www.cairo-lang.org/docs/how_cairo_works/imports.html#import-search-paths
+
     Arguments:
     `cairo_path` - The --cairo_path parameter as a colon-separated list
     """
     search_paths = []
 
     # --cairo_path parameter
-    print(f"cairo_path param {cairo_path}")
     if cairo_path is not None:
         search_paths.extend(cairo_path.split(":"))
 
     # CAIRO_PATH environment variable
     envVar = os.getenv('CAIRO_PATH')
-    print(f"os env var {envVar}")
     search_paths.extend(envVar.split(":"))
 
     # current directory and standard library directory relative to the compiler path
     starkware_src = os.path.join(os.path.dirname(cairo_compile.__file__), "../../../..")
     search_paths.extend([os.curdir, starkware_src])
-    print(f"cairo_paths {search_paths}")
 
     absolute_search_paths = [
         os.path.abspath(path)
         for path in search_paths
-        # if path is not None and os.path.isdir(path)
     ]
-    print(f"absolute_search_paths {absolute_search_paths}")
     return absolute_search_paths
