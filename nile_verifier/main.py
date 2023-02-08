@@ -58,35 +58,31 @@ def check_is_account(main_file):
 
 def get_files(main_file, import_search_paths, cache = {}, include_path=False):
     contract_filename = basename(main_file)
+
     key = contract_filename if not include_path else main_file
     if key in cache:
         # circular dependency - cairo compiler would throw an error but we'll just return
-        return cache
+        return {}
 
-    found_contract = False
+    regex = "^from\s(.*?)\simport"
+    regex_compiled = re.compile(regex, re.MULTILINE)
+
+    found_file = False
     for import_search_path in import_search_paths:
         contract_abs_path = f"{import_search_path}/{main_file}"
         if os.path.exists(contract_abs_path):
-            found_contract = True
+            found_file = True
             with open(contract_abs_path) as f:
                 file_content = f.read()
-
                 cache[key] = file_content
-
-                regex = "^from\s(.*?)\simport"
-                regex_compiled = re.compile(regex, re.MULTILINE)
-                regex_result = regex_compiled.findall(file_content)
-
-                iterator = map(to_cairo_file_path, regex_result)
-                imported_files = list(iterator)
+                imports = regex_compiled.findall(file_content)
+                imported_files = list(map(to_cairo_file_path, imports))
 
                 for file in imported_files:
-                    cache.update(
-                        get_files(file, import_search_paths, cache, include_path=True)
-                    )
+                    get_files(file, import_search_paths, cache, include_path=True)
             break
 
-    if found_contract is False:
+    if found_file is False:
         raise Exception(
             f"Could not find {main_file} in any of the following paths: {import_search_paths}"
         )
