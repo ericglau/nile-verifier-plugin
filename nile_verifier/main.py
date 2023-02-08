@@ -55,9 +55,8 @@ def check_is_account(main_file):
     contract_name = get_contract_name(main_file)
     return contract_name.endswith("Account")
 
-def get_files(main_file, import_search_paths, cache = {}, include_path=False):
-    print(f"processing contract {main_file}")
 
+def get_files(main_file, import_search_paths, cache = {}, include_path=False):
     contract_filename = basename(main_file)
     key = contract_filename if not include_path else main_file
     if key in cache:
@@ -76,30 +75,34 @@ def get_files(main_file, import_search_paths, cache = {}, include_path=False):
 
                 regex = "^from\s(.*?)\simport"
                 regex_compiled = re.compile(regex, re.MULTILINE)
-                result = regex_compiled.findall(file_content)
+                regex_result = regex_compiled.findall(file_content)
 
-                iterator = map(to_cairo_file_path, result)
+                iterator = map(to_cairo_file_path, regex_result)
                 imported_files = list(iterator)
 
-                for imported_file in imported_files:
-                    recursive_files = get_files(imported_file, import_search_paths, cache, include_path=True)
-                    cache.update(recursive_files)
+                for file in imported_files:
+                    cache.update(
+                        get_files(file, import_search_paths, cache, include_path=True)
+                    )
             break
 
     if found_contract is False:
         raise Exception(
-                f"Could not find {main_file} in any of the following paths: {import_search_paths}"
-            )
+            f"Could not find {main_file} in any of the following paths: {import_search_paths}"
+        )
 
-    print(f"all keys {cache.keys()}")
     return cache
+
 
 def to_cairo_file_path(filepath):
     return f"{filepath.replace('.', '/')}.cairo"
 
+
 def get_contract_name(path):
     return splitext(basename(path))[0]
 
+
+# Reference: https://www.cairo-lang.org/docs/how_cairo_works/imports.html#import-search-paths
 def get_import_search_paths(cairo_path):
     """
     Get import search paths in the following order:
@@ -107,8 +110,6 @@ def get_import_search_paths(cairo_path):
     2. CAIRO_PATH environment variable
     3. current directory
     4. standard library directory relative to the compiler path
-
-    Reference: https://www.cairo-lang.org/docs/how_cairo_works/imports.html#import-search-paths
 
     Arguments:
     `cairo_path` - The --cairo_path parameter as a colon-separated list
@@ -120,12 +121,12 @@ def get_import_search_paths(cairo_path):
         search_paths.extend(cairo_path.split(":"))
 
     # CAIRO_PATH environment variable
-    envVar = os.getenv('CAIRO_PATH')
-    search_paths.extend(envVar.split(":"))
+    env_var = os.getenv('CAIRO_PATH')
+    search_paths.extend(env_var.split(":"))
 
     # current directory and standard library directory relative to the compiler path
-    starkware_src = os.path.join(os.path.dirname(cairo_compile.__file__), "../../../..")
-    search_paths.extend([os.curdir, starkware_src])
+    standard_lib_dir = os.path.join(os.path.dirname(cairo_compile.__file__), "../../../..")
+    search_paths.extend([os.curdir, standard_lib_dir])
 
     absolute_search_paths = [
         os.path.abspath(path)
